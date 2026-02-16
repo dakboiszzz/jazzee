@@ -5,7 +5,8 @@ build/
 dist/
 wheels/
 *.egg-info
-
+src/
+jazz/
 # Virtual environments
 .venv
 *.wav
