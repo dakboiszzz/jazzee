@@ -36,7 +36,7 @@ def preprocess(folder_path, save_path):
         
     final_data = np.array(all_chunks)
     np.save(save_path,final_data)
-
+preprocess('jazz', 'train_data.npy')
 """
     # Display
     plt.figure(figsize= (10,4))

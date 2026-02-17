@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
+import numpy as np
+import torch.utils.data.dataset as Dataset
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 
@@ -59,7 +60,21 @@ transform = transforms.Compose([
     transforms.Normalize((0,5,), (0,5,)) 
 ])
 
-dataset = []
+class AudioDataset(Dataset):
+    def __init__(self, file_path):
+        self.data = np.load(file_path)
+    def __len__(self):
+        return len(self.data)
+    def __getitem__(self,idx):
+        img = self.data[idx]
+        
+        # Convert to Float Tensor
+        img = torch.tensor(img, dtype=torch.float32)
+        # Add Channel Dimension
+        img = img.unsqueeze(0) # (1,128,256)
+        return img,0
+
+dataset = AudioDataset('train_data.npy')
 loader = DataLoader(dataset, batch_size= batch_size, shuffle = True)
 
 criterion = nn.BCELoss()
