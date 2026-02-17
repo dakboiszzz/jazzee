@@ -14,10 +14,12 @@ class Discriminator(nn.Module):
     def __init__(self, fanin):
         super().__init__()
         self.disc = nn.Sequential(
-            nn.Linear(fanin,128),
+            nn.Linear(fanin, 2048),
             nn.LeakyReLU(0.1),
-            nn.Linear(128,1),
-            nn.Sigmoid(),
+            nn.Linear(2048, 512),
+            nn.LeakyReLU(0.1),
+            nn.Linear(512, 1),
+            nn.Sigmoid()
         )
     def forward(self,x):
         return self.disc(x)
@@ -31,9 +33,12 @@ class Generator(nn.Module):
     def __init__(self,noise_dim,img_dim):
         super().__init__()
         self.gen = nn.Sequential(
-            nn.Linear(noise_dim, 128),
+            # We need more neurons because the output is huge
+            nn.Linear(noise_dim, 1024),
             nn.LeakyReLU(0.1),
-            nn.Linear(128,img_dim),
+            nn.Linear(1024, 4096), # Increased hidden layer size
+            nn.LeakyReLU(0.1),
+            nn.Linear(4096, img_dim),
             nn.Tanh(),
         )
     def forward(self,x):
@@ -41,9 +46,9 @@ class Generator(nn.Module):
     
 # Setting hyperparams
 device = "cuda" if torch.cuda.is_available() else "cpu"
-lr = 3e-4
-noise_dim = 64
-img_dim = 128
+lr = 2e-4
+noise_dim = 100
+img_dim = 128 * 256
 batch_size = 32
 epochs = 50
 
