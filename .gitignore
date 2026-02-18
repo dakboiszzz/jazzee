@@ -10,4 +10,5 @@ jazz/
 # Virtual environments
 .venv
 *.wav
+*.npy
 
