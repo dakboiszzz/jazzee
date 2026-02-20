@@ -32,7 +32,7 @@ class DBlock(nn.Module):
 # - Last layer: stride 1 (the author failed to mention this in the paper, but I've figured it out)
 # - After the last layer: Another layer with out_channel = 1, stride 1 + Sigmoid
 class Discriminator(nn.Module):
-    def __init__(self,in_feat = 3,features = [64,128,256,512]):
+    def __init__(self,in_feat = 1,features = [64,128,256,512]):
         super().__init__()
         layers = []
         for feature in features:
@@ -90,7 +90,7 @@ class ResBlock(nn.Module):
         return x + self.model(x)
         
 class Generator(nn.Module):
-    def __init__(self, in_feat = 3, feat = 64,num_res = 9):
+    def __init__(self, in_feat = 1, feat = 64,num_res = 9):
         super().__init__()
         # c7s1-64,d128,d256,R256,R256,R256,R256,R256,R256,u128,u64,c7s1-3
         # c7s1-k: Conv2d 7x7 k filter, stride 1 + InstanceNorm + ReLU
@@ -114,7 +114,7 @@ class Generator(nn.Module):
             GBlock(feat * 2, feat, down = False),
         )
         self.last_layer = nn.Sequential(
-            nn.Conv2d(feat,3, 7, 1, 3, padding_mode = 'reflect', bias = False),
+            nn.Conv2d(feat,1, 7, 1, 3, padding_mode = 'reflect', bias = False),
             nn.Tanh(),
         )
     def forward(self,x):
