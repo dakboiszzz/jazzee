@@ -3,21 +3,22 @@ import torch.nn as nn
 
 # -----BUILDING THE DISCRIMINATOR------
 
+# Same goes for the pix2pix
 # Create a Ck Block, with k represents the out_channel
 # Consiting of:
 # - A conv layer, filter 4x4, stride 2, padding 1, bias = False, padding_mode 'reflect'
-# - BatchNorm
+# - InstanceNorm (Not BatchNorm anymore)
 # - Leaky ReLU (slope 0.2)
 
 class DBlock(nn.Module):
-    def __init__(self,in_channels, out_channels, bn = True, stride = 2):
+    def __init__(self,in_channels, out_channels, ins = True, stride = 2):
         super().__init__()
         sequence = [
             nn.Conv2d(in_channels, out_channels, (4,4), stride, 1, bias = False, padding_mode = 'reflect'),
         ]
-        if bn:
+        if ins:
             sequence.append(
-                nn.BatchNorm2d(out_channels)
+                nn.InstanceNorm2d(out_channels)
             )
         sequence.append(nn.LeakyReLU(0.2))
         
@@ -27,8 +28,7 @@ class DBlock(nn.Module):
         
 # Discriminator -> C64 - C128 - C256 - C512 
 # Few things to note here:
-# - First layer: No BatchNorm
-# - First layer: Doubling the channel for stacking the target with the input
+# - First layer: No InstanceNorm
 # - Last layer: stride 1 (the author failed to mention this in the paper, but I've figured it out)
 # - After the last layer: Another layer with out_channel = 1, stride 1 + Sigmoid
 class Discriminator(nn.Module):
@@ -38,7 +38,7 @@ class Discriminator(nn.Module):
         for feature in features:
             if feature == features[0]:
                 # Double bc Discriminator take both input & target
-                layers.append(DBlock(in_feat * 2, feature, bn = False))
+                layers.append(DBlock(in_feat, feature, ins = False))
             elif feature == features[-1]:
                 # Change the stride for the C512 layer
                 layers.append(DBlock(in_feat,feature, stride = 1))
@@ -48,114 +48,80 @@ class Discriminator(nn.Module):
         # For the layer that comes after last layer
         layers.extend([
             nn.Conv2d(features[-1], 1, (4,4), 1, 1, bias = False, padding_mode= 'reflect'),
-            nn.Sigmoid(),
+            # Remove the Sigmoid bc we'll use MSE not BCE
         ])
         self.model = nn.Sequential(*layers)
         
-    def forward(self,x,y):
-        # Concat along the channel dim
-        out = torch.cat([x,y], 1)
-        return self.model(out)
+    def forward(self,x):
+        return self.model(x)
 
 
+# -----BUILDING THE GENERATOR------
 
-# ------BUILDING THE GENERATOR ------- 
-
-# Create the C block for Generator (bascially the same with the Discriminator)
-# Few things to note:
-# If it's upscaling : Use ConvTranspose2d rather than Conv2d
-# Downward: Leaky ReLU | Upward: ReLU
-# Some layers in the upward path has Dropout (0.5)
+# This is different from the pix2pix model
+# 1. Filter 3x3, stride 2, padding_mode = 'reflect'
+# 2. InstanceNorm, not BatchNorm
+# 3. Use ReLU 
 class GBlock(nn.Module):
-    def __init__(self,in_channels, out_channels, bn = True, stride = 2, en = True, drop = True):
+    def __init__(self,in_channels, out_channels, down = True, stride = 2, use_act = True):
         super().__init__()
-        sequence = [
-            nn.Conv2d(in_channels, out_channels, (4,4), stride, 1, bias = False, padding_mode = 'reflect')
-            if en
-            else nn.ConvTranspose2d(in_channels, out_channels, (4,4), stride, 1, bias = False)
-        ]
-        if bn:
-            sequence.append(
-                nn.BatchNorm2d(out_channels)
-            )
-        if en:
-            sequence.append(nn.LeakyReLU(0.2))
+        layers = []
+        if down:
+            layers.append(nn.Conv2d(in_channels, out_channels, 3, stride, 1, bias = False,  padding_mode='reflect'))
         else: 
-            if drop:
-                sequence.append(nn.Dropout(0.5))
-            sequence.append(nn.ReLU())
-        
-        self.block = nn.Sequential(*sequence)
+            layers.append(nn.ConvTranspose2d(in_channels, out_channels, 3, stride, 1, bias = False, output_padding= 1))
+        layers.extend([
+            nn.InstanceNorm2d(out_channels),
+            nn.ReLU(inplace = True) if use_act else nn.Identity(),
+        ])
+        self.block = nn.Sequential(*layers)
     def forward(self,x):
         return self.block(x)
-
-# Create the Generator: Resembling the U-Net architecture
-class Generator(nn.Module):
-    def __init__(self,in_channels = 3, feature = 64):
+class ResBlock(nn.Module):
+    def __init__(self,in_channels):
         super().__init__()
-        # --- ENCODER (Downsampling) ---
-        # Down: C64-C128-C256-C512-C512-C512-C512-C512
-        # I have to define them individually for skip connection
-        self.down1 = GBlock(in_channels, feature, bn=False)             # Out: 64
-        self.down2 = GBlock(feature, feature * 2)                       # Out: 128
-        self.down3 = GBlock(feature * 2, feature * 4)                   # Out: 256
-        self.down4 = GBlock(feature * 4, feature * 8)                   # Out: 512
-        self.down5 = GBlock(feature * 8, feature * 8)                   # Out: 512
-        self.down6 = GBlock(feature * 8, feature * 8)                   # Out: 512
-        self.down7 = GBlock(feature * 8, feature * 8)                   # Out: 512
-        
-        # A bottleneck layer (No BatchNorm)
-        self.bottleneck = GBlock(feature * 8, feature * 8, bn=False)    # Out: 512
-        
-        # --- DECODER (Upsampling) ---
-        # Up (U-Net version): CD512-CD1024-CD1024-C1024-C1024-C512-C256-C128
-        # Notice the inputs: After down7 is concatenated, the input becomes 1024!
-        self.up1 = GBlock(feature * 8, feature * 8, en=False, drop=True)          # In: 512 -> Out: 512
-        self.up2 = GBlock(feature * 8 * 2, feature * 8, en=False, drop=True)      # In: 1024 -> Out: 512
-        self.up3 = GBlock(feature * 8 * 2, feature * 8, en=False, drop=True)      # In: 1024 -> Out: 512
-        self.up4 = GBlock(feature * 8 * 2, feature * 8, en=False)                 # In: 1024 -> Out: 512
-        self.up5 = GBlock(feature * 8 * 2, feature * 4, en=False)                 # In: 1024 -> Out: 256
-        self.up6 = GBlock(feature * 4 * 2, feature * 2, en=False)                 # In: 512 -> Out: 128
-        self.up7 = GBlock(feature * 2 * 2, feature, en=False)                     # In: 256 -> Out: 64
-        
-        # Final Layer (Maps back to 3 RGB channels)
-        self.final_up = nn.Sequential(
-            nn.ConvTranspose2d(feature * 2, 3, (4,4), 2, 1, bias=False), # In: 128 (64+64) -> Out: 3
-            nn.Tanh()
+        self.model = nn.Sequential(
+            # Kinda subtle here, like I need to use a convBlock rather than a conv layer
+            # And the second layer I need to remove the activation 
+            GBlock(in_channels,in_channels, stride = 1),
+            GBlock(in_channels,in_channels, stride = 1, use_act = False),
         )
-    def forward(self, x):
-        # --- PASS DOWN (Save the skip connections!) ---
-        d1 = self.down1(x)
-        d2 = self.down2(d1)
-        d3 = self.down3(d2)
-        d4 = self.down4(d3)
-        d5 = self.down5(d4)
-        d6 = self.down6(d5)
-        d7 = self.down7(d6)
+    def forward(self,x):
+        return x + self.model(x)
         
-        bottleneck = self.bottleneck(d7)
+class Generator(nn.Module):
+    def __init__(self, in_feat = 3, feat = 64,num_res = 9):
+        super().__init__()
+        # c7s1-64,d128,d256,R256,R256,R256,R256,R256,R256,u128,u64,c7s1-3
+        # c7s1-k: Conv2d 7x7 k filter, stride 1 + InstanceNorm + ReLU
+        # dk: Conv2d 3x3 k filter, stride 2 + InstanceNorm, ReLU
+        # Rk: ResBlock
+        # uk: ConvTranspose2d 3x3 k filter, stride 2 + InstanceNorm + ReLU
+        self.initial_layer = nn.Sequential(
+            nn.Conv2d(in_feat,feat, 7, 1, 3, padding_mode = 'reflect', bias = False), # Need to change the padding to 3 to preserve the original img
+            nn.InstanceNorm2d(feat),
+            nn.ReLU(inplace = True),
+        )
+        self.down = nn.Sequential(
+            GBlock(feat, feat * 2),
+            GBlock(feat * 2, feat * 4),
+        )
+        self.res = nn.Sequential(
+            *[ResBlock(feat * 4) for _ in range(num_res)]
+        )
+        self.up = nn.Sequential(
+            GBlock(feat * 4, feat * 2, down = False),
+            GBlock(feat * 2, feat, down = False),
+        )
+        self.last_layer = nn.Sequential(
+            nn.Conv2d(feat,3, 7, 1, 3, padding_mode = 'reflect', bias = False),
+            nn.Tanh(),
+        )
+    def forward(self,x):
+        out = self.initial_layer(x)
+        out = self.down(out)
+        out = self.res(out)
+        out = self.up(out)
+        return self.last_layer(out)
         
-        # --- PASS UP & CONCATENATE ---
-        # Concat along the channel dim
-        u1 = self.up1(bottleneck)
-        u1 = torch.cat([u1, d7], dim=1) 
         
-        u2 = self.up2(u1)
-        u2 = torch.cat([u2, d6], dim=1)
-        
-        u3 = self.up3(u2)
-        u3 = torch.cat([u3, d5], dim=1)
-        
-        u4 = self.up4(u3)
-        u4 = torch.cat([u4, d4], dim=1)
-        
-        u5 = self.up5(u4)
-        u5 = torch.cat([u5, d3], dim=1)
-        
-        u6 = self.up6(u5)
-        u6 = torch.cat([u6, d2], dim=1)
-        
-        u7 = self.up7(u6)
-        u7 = torch.cat([u7, d1], dim=1)
-        
-        return self.final_up(u7)
