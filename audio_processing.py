@@ -61,7 +61,7 @@ def postprocess(file_path, save_path):
     print(f'Saving to {save_path}')
     sf.write(save_path,audio,22050)
     print("Done bro!")
-postprocess('input.npy', 'constructed.wav')
+# postprocess('input.npy', 'constructed.wav')
 """
     # Display
     plt.figure(figsize= (10,4))
