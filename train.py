@@ -127,6 +127,6 @@ def main():
         # 4. Grab a batch of data and save the visual spectrograms 
         pop_sample, jazz_sample = next(iter(loader))
         pop_sample, jazz_sample = pop_sample.to(config.DEVICE), jazz_sample.to(config.DEVICE)
-        utils.save_spectrogram_samples(gen_j, gen_p, pop_sample, jazz_sample, epoch)
+        utils.save_audio_samples(gen_j, gen_p, pop_sample, jazz_sample, epoch)
 if __name__ == "__main__":
     main()

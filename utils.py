@@ -5,6 +5,8 @@ import numpy as np
 import config
 from torchvision.utils import save_image
 
+import librosa
+import soundfile as sf
 def save_checkpoint(model, optimizer, filename="my_checkpoint.pth.tar"):
     print(f"=> Saving checkpoint: {filename}")
     checkpoint = {
@@ -32,15 +34,19 @@ def seed_everything(seed=42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+def spec_to_sound(mel, sr=22050):
+    """Reverses the normalization, converts to power, and estimates the audio waveform."""
+    mel = (mel + 1) / 2 * 80 - 80
+    mel_power = librosa.db_to_power(mel)
+    return librosa.feature.inverse.mel_to_audio(mel_power, sr=sr)
 
-def save_spectrogram_samples(gen_j, gen_p, pop, jazz, epoch, folder="saved_spectrograms"):
+def save_audio_samples(gen_j, gen_p, pop, jazz, epoch, folder="saved_audio"):
     """
-    Saves a snapshot of real vs. fake spectrograms to visualize training progress.
-    Since your shape is (N, 1, 128, 256), they map perfectly to grayscale images.
+    Saves a snippet of real vs. fake audio to listen to training progress.
+    Grabs the first sample in the batch, converts tensor to numpy, and processes to .wav.
     """
     os.makedirs(folder, exist_ok=True)
     
-    # Put generators in eval mode to disable dropout/batchnorm updates
     gen_j.eval()
     gen_p.eval()
     
@@ -48,14 +54,24 @@ def save_spectrogram_samples(gen_j, gen_p, pop, jazz, epoch, folder="saved_spect
         fake_jazz = gen_j(pop)
         fake_pop = gen_p(jazz)
         
-        # Take up to 4 samples from the batch to avoid huge image files
-        # We assume your outputs are normalized to [-1, 1] (using Tanh in Generator).
-        # Multiplying by 0.5 and adding 0.5 brings them to [0, 1] for saving.
-        save_image(pop[:4] * 0.5 + 0.5, f"{folder}/real_pop_epoch_{epoch}.png")
-        save_image(fake_jazz[:4] * 0.5 + 0.5, f"{folder}/fake_jazz_epoch_{epoch}.png")
-        save_image(jazz[:4] * 0.5 + 0.5, f"{folder}/real_jazz_epoch_{epoch}.png")
-        save_image(fake_pop[:4] * 0.5 + 0.5, f"{folder}/fake_pop_epoch_{epoch}.png")
+        # 1. Grab the first item in the batch [0] and strip the channel dimension [0]
+        # 2. Move from GPU to CPU (.cpu()) and convert to NumPy (.numpy())
+        real_pop_np = pop[0, 0].cpu().numpy()
+        fake_jazz_np = fake_jazz[0, 0].cpu().numpy()
+        real_jazz_np = jazz[0, 0].cpu().numpy()
+        fake_pop_np = fake_pop[0, 0].cpu().numpy()
         
-    # Revert to training mode
+        # Convert NumPy arrays to audio waveforms
+        audio_real_pop = spec_to_sound(real_pop_np)
+        audio_fake_jazz = spec_to_sound(fake_jazz_np)
+        audio_real_jazz = spec_to_sound(real_jazz_np)
+        audio_fake_pop = spec_to_sound(fake_pop_np)
+        
+        # Save as .wav files (These will be short clips, ~5-6 seconds each)
+        sf.write(f"{folder}/epoch_{epoch}_real_pop.wav", audio_real_pop, 22050)
+        sf.write(f"{folder}/epoch_{epoch}_fake_jazz.wav", audio_fake_jazz, 22050)
+        sf.write(f"{folder}/epoch_{epoch}_real_jazz.wav", audio_real_jazz, 22050)
+        sf.write(f"{folder}/epoch_{epoch}_fake_pop.wav", audio_fake_pop, 22050)
+        
     gen_j.train()
     gen_p.train()
