@@ -34,10 +34,10 @@ def preprocess(folder_path, save_path):
         
         all_chunks.extend(data)
         
-    final_data = np.array(all_chunks)
-    np.save(save_path,final_data)
+        for idx, chunk in enumerate(data):
+            np.save(os.path.join(save_path, f"{file[:-4]}_chunk_{idx}.npy"), chunk)
     
-# preprocess('jazz', 'train_data.npy')
+preprocess('jazz', 'train_data')
 
 def spec_to_sound(mel, sr = 22050):
     # Reverse this
