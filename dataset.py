@@ -17,8 +17,8 @@ class PopJazzDataset(Dataset):
         self.jazz_root = jazz_root
         
         # Take just the file names, for memory efficiency
-        self.pop = os.listdir(pop_root)
-        self.jazz = os.listdir(jazz_root)
+        self.pop = [f for f in os.listdir(pop_root) if f.endswith('.npy')]
+        self.jazz = [f for f in os.listdir(jazz_root) if f.endswith('.npy')]
         
         # Specify the len
         self.data_len = max(len(self.pop), len(self.jazz))
