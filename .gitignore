@@ -12,3 +12,15 @@ jazz/
 *.wav
 *.npy
 
+*.pth
+*.pt
+*.pth.tar
+
+# =========================
+# OS & IDE Files
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.ipynb_checkpoints/

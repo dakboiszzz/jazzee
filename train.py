@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from model_pix2pix import Discriminator, Generator
+from model import Discriminator, Generator
 from torch.utils.data import DataLoader
 from dataset import PopJazzDataset
 import config

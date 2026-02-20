@@ -42,5 +42,5 @@ class PopJazzDataset(Dataset):
         pop_file = np.load(pop_path)
         jazz_file = np.load(jazz_path)
         
-        return {"pop": self.transform(pop_file), "jazz": self.transform(jazz_file)}
+        return self.transform(pop_file),self.transform(jazz_file)
         
