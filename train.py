@@ -7,6 +7,8 @@ from torch.utils.data import DataLoader
 from dataset import PopJazzDataset
 import config
 from tqdm import tqdm
+
+import utils
 def train_fn(disc_p, disc_j, gen_p, gen_j, loader, opt_disc, opt_gen, L1, MSE, d_scaler, g_scaler):
     # This is for visualizing, it creates the progress bar, which is cool
     loop = tqdm(loader, leave = True)
@@ -75,7 +77,12 @@ def train_fn(disc_p, disc_j, gen_p, gen_j, loader, opt_disc, opt_gen, L1, MSE, d
         g_scaler.step(opt_gen)
         g_scaler.update()
         
+        # Update progress bar
+        loop.set_postfix(loss_g=loss_g.item(), loss_d=loss_disc.item())
+        
 def main():
+    # 1. Lock in the random seed for reproducible results!
+    utils.seed_everything(42)
     # Initializing 2 discriminators and 2 generators (pop and jazz)
     disc_p = Discriminator().to(config.DEVICE)
     gen_p = Generator().to(config.DEVICE)
@@ -86,6 +93,13 @@ def main():
     # Initialize the Adam solver, with the betas specified in the original paper
     opt_disc = optim.Adam(list(disc_p.parameters()) + list(disc_j.parameters()), lr = config.LR, betas = (0.5, 0.999))
     opt_gen = optim.Adam(list(gen_p.parameters()) + list(gen_j.parameters()), lr = config.LR, betas = (0.5, 0.999))
+    
+    # 2. Load Checkpoints (if config is set to load previous weights)
+    if config.LOAD_MODEL:
+        utils.load_checkpoint("disc_p.pth.tar", disc_p, opt_disc, config.LR)
+        utils.load_checkpoint("disc_j.pth.tar", disc_j, opt_disc, config.LR)
+        utils.load_checkpoint("gen_p.pth.tar", gen_p, opt_gen, config.LR)
+        utils.load_checkpoint("gen_j.pth.tar", gen_j, opt_gen, config.LR)
     
     # Data
     dataset = PopJazzDataset('pop_train', 'jazz_train')
@@ -100,6 +114,19 @@ def main():
     g_scaler = torch.amp.GradScaler()
     
     for epoch in range(config.EPOCHS):
+        print(f"Epoch: [{epoch}/{config.EPOCHS}]")
         train_fn(disc_p, disc_j, gen_p, gen_j, loader, opt_disc, opt_gen, L1, MSE, d_scaler, g_scaler)
+        
+        # 3. Save model states and optimizers so you don't lose progress
+        if config.SAVE_MODEL:
+            utils.save_checkpoint(disc_p, opt_disc, filename="disc_p.pth.tar")
+            utils.save_checkpoint(disc_j, opt_disc, filename="disc_j.pth.tar")
+            utils.save_checkpoint(gen_p, opt_gen, filename="gen_p.pth.tar")
+            utils.save_checkpoint(gen_j, opt_gen, filename="gen_j.pth.tar")
+            
+        # 4. Grab a batch of data and save the visual spectrograms 
+        pop_sample, jazz_sample = next(iter(loader))
+        pop_sample, jazz_sample = pop_sample.to(config.DEVICE), jazz_sample.to(config.DEVICE)
+        utils.save_spectrogram_samples(gen_j, gen_p, pop_sample, jazz_sample, epoch)
 if __name__ == "__main__":
     main()
